@@ -122,7 +122,7 @@ In general, execution should be halted at the end of a cycle at which the ROB is
 The `pc` variable should be maintained as specified for correctness when exceptions occur. The PC starts from 0 (on the first instruction). Empty lines, comments, memory declarations, et cetera do not count as instructions and thus the PC should not be incremented because of these. It is recommended to preprocess and load the instructions into the provided `inst_memory` vector and index into it using the PC.
 
 ### Register File
-The register file is simply a vector `ARF` in the `Processor` that is indexed normally. Remember that the `x0` register in RISC-V always remains 0 regardless of writes to it. (So x0 will always be up-to-date architecturally. ROB entries are still allocated, but RAT is not and the writeback in the commit stage is ignored for x0)
+The register file is simply a vector `ARF` in the `Processor` that is indexed normally. Remember that the `x0` register in RISC-V always remains 0 regardless of writes to it. (So x0 will always be up-to-date architecturally. What does this mean for RAT? How does this change the `Commit` stage?)
 Note that we will never give a register name that does not exist (eg. x100) so no need to think of exception handling for this.
 
 ### Memory
