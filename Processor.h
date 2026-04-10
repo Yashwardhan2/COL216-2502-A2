@@ -15,28 +15,15 @@ class Processor {
 public:
     int pc;
     int clock_cycle;
-
-    // pipeline registers
-
     std::vector<Instruction> inst_memory;
-
-    // architectural state (do not change)
     std::vector<int> ARF; // regFile
     std::vector<int> Memory; // Memory
     bool exception = false; // exception bit
-
-    // register alias table / reorder buffer
-    // ---------- Register Alias Table ----------
-    // RAT[r] == -1   -> ARF[r] is current
-    // RAT[r] >= 0    -> value will come from ROB entry at that index
     std::vector<int> RAT;
-    // ---------- Reorder Buffer (circular vector) ----------
     std::vector<ROBEntry> ROB;
     int rob_head = 0;     // oldest in-flight instruction (next to commit)
     int rob_tail = 0;     // next free slot
     int rob_count = 0;    // number of occupied slots
-    // ---------- Pipeline registers ----------
-    // Fetch -> Decode latch: one instruction per cycle
     struct FetchLatch {
         bool valid = false;
         Instruction instr;
@@ -51,10 +38,7 @@ public:
         int branch_rs_used = 0;
         int lsq_used = 0;
     } snapshot;
-      // ---------- Config cached for access in stages ----------
     ProcessorConfig cfg;
-
-    // ---------- Halt state ----------
     bool halted = false;
     bool fetch_stall_this_cycle = false;   //if we want to flush the pipeline, we need to prevent new instructions from being fetched in the same cycle, so we will set this true if we detect a mispredicted branch or an exception in the Execute stage. It will be reset to false at the beginning of the next cycle.
     std::vector<ExecutionUnit> units;
@@ -66,27 +50,15 @@ public:
         clock_cycle = 0;
         ARF.resize(config.num_regs, 0);
         Memory.resize(config.mem_size);
-
-        // Instantiate Hardware Units
-        // Adder
-        // Multiplier
-        // Divider
-        // Branch Computation
-        // Bitwise Logic
-        // Load-Store Unit
-         // --- NEW ---
         cfg = config;
         RAT.assign(config.num_regs, -1);
         ROB.assign(config.rob_size, ROBEntry{});
         rob_head = rob_tail = rob_count = 0;
-
-        // Instantiate Hardware Units
         units.push_back(ExecutionUnit(UnitType::ADDER,      config.add_lat,   config.adder_rs_size));
         units.push_back(ExecutionUnit(UnitType::MULTIPLIER, config.mul_lat,   config.mult_rs_size));
         units.push_back(ExecutionUnit(UnitType::DIVIDER,    config.div_lat,   config.div_rs_size));
         units.push_back(ExecutionUnit(UnitType::BRANCH,     config.add_lat,   config.br_rs_size));
         units.push_back(ExecutionUnit(UnitType::LOGIC,      config.logic_lat, config.logic_rs_size));
-
         lsq = new LoadStoreQueue(config.mem_lat, config.lsq_rs_size);
     }
     ~Processor() {
@@ -228,10 +200,7 @@ public:
 
         Instruction ins = fd_latch.instr;
         int predicted = fd_latch.predicted_next_pc;
-
-        // ----- 1. Check resources -----
         if (!can_alloc_rob_now()) return;
-
         UnitType target = unit_for(ins.op);
         bool is_mem  = (ins.op == OpCode::LW || ins.op == OpCode::SW);
         bool is_jump = (ins.op == OpCode::J);
@@ -242,7 +211,6 @@ public:
             if (!can_alloc_unit_rs_now(target)) return;
         }
 
-        // ----- 2. Allocate ROB entry -----
         int rob_idx = rob_alloc();
         ROBEntry& rob = ROB[rob_idx];
         rob.op = ins.op;
@@ -253,7 +221,6 @@ public:
         rob.ready = false;
         rob.exception = false;
 
-        // ----- 3. Read source operands via RAT (BEFORE updating RAT for this instr) -----
         auto read_src = [&](int reg, int& V, int& Q) {
             if (reg <= 0) { V = 0; Q = -1; return; }
             int producer = RAT[reg];
@@ -273,9 +240,9 @@ public:
         read_src(ins.src1, Vj, Qj);
         read_src(ins.src2, Vk, Qk);
 
-        // ----- 4. Allocate RS / LSQ entry -----
+       
         if (is_jump) {
-            rob.ready = true;                  // J: no execute, retires as no-op
+            rob.ready = true;                  
             fd_latch.valid = false;
             return;
         }
@@ -306,7 +273,6 @@ public:
             rs.instr_pc = ins.pc;
         }
 
-        // ----- 5. Update RAT (for register-writing instructions only) -----
         if (rob.dest_reg > 0) {                // x0 is never renamed
             RAT[rob.dest_reg] = rob_idx;
         }
@@ -316,7 +282,6 @@ public:
 
     void stageExecuteAndBroadcast() {
         for (auto& u : units) u.executeCycle();
-        // LSQ stays empty for Step 4; we'll call lsq->executeCycle(Memory) in Step 5.
         lsq->executeCycle(Memory, ROB);
     }
     void broadcastOnCDB() {
@@ -362,28 +327,22 @@ public:
         // Reset the fetch-stall flag; commit will re-set it this cycle if a flush happens.
         fetch_stall_this_cycle = false;
 
-        // Nothing to commit?
         if (rob_empty()) return;
 
         ROBEntry& head = ROB[rob_head];
         if (!head.ready) return;   // oldest instr hasn't finished executing yet
 
-        // ------------------------------------------------------------
-        // CASE 1: exception at head
-        // ------------------------------------------------------------
+       
         if (head.exception) {
             pc = head.instr_pc;          // PC of the faulting instruction
             exception = true;
             flush();                     // clear everything behind it
             halted = true;
             fetch_stall_this_cycle = true;
-            // Do NOT pop the head. Do NOT write ARF/Memory.
             return;
         }
 
-        // ------------------------------------------------------------
-        // CASE 2: store -- write Memory, not a register
-        // ------------------------------------------------------------
+     
         if (head.op == OpCode::SW) {
             // Bounds check already happened at execute; if we got here,
             // either it was fine or exception is set (handled above).
@@ -392,9 +351,6 @@ public:
             return;
         }
 
-        // ------------------------------------------------------------
-        // CASE 3: branch (conditional) -- resolve vs. prediction
-        // ------------------------------------------------------------
         if (head.is_branch && head.op != OpCode::J) {
             bool was_correct = (head.predicted_target == head.actual_target);
             bp.update(head.instr_pc, head.actual_target, head.taken, was_correct);
@@ -410,9 +366,6 @@ public:
             return;
         }
 
-        // ------------------------------------------------------------
-        // CASE 4: unconditional jump -- retires as a no-op (handled in fetch)
-        // ------------------------------------------------------------
         if (head.op == OpCode::J) {
             // J was fully resolved in Fetch; BP is not involved per our design.
             // No arch-state change at commit.
@@ -420,9 +373,6 @@ public:
             return;
         }
 
-        // ------------------------------------------------------------
-        // CASE 5: normal register-writing op (arith, logic, lw, slt, ...)
-        // ------------------------------------------------------------
         if (head.dest_reg > 0) {    // x0 is never written
             ARF[head.dest_reg] = head.value;
             if (RAT[head.dest_reg] == rob_head) {
@@ -475,7 +425,6 @@ public:
         }
         std::cout << "Branch Predictor Stats: " << bp.correct_predictions << "/" << bp.total_branches << " correct.\n";
     }
-     // ---------- ROB helpers ----------
     bool rob_full()   { 
         return rob_count == cfg.rob_size;
      }
@@ -571,7 +520,6 @@ private:
     }
    
 
-    // ---------- unit selection ----------
     UnitType unit_for(OpCode op) {
         switch (op) {
             case OpCode::ADD: case OpCode::SUB: case OpCode::ADDI:

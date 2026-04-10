@@ -8,10 +8,6 @@ class LoadStoreQueue {
 public:
     int latency = 4;
     int lsq_size = 32;
-
-    // Strict FIFO of pending memory ops (program order).
-    // Each entry holds its operands/tags just like an RS entry,
-    // plus a countdown for when it reaches the head and starts executing.
     struct LSQEntry {
         bool busy = false;
         OpCode op;                   // LW or SW
@@ -42,7 +38,6 @@ public:
         lsq_size = size;
     }
 
-    // ---------- helpers ----------
     bool full() const { return (int)queue.size() >= lsq_size; }
     bool empty() const { return queue.empty(); }
 
@@ -68,7 +63,6 @@ public:
         return true;
     }
 
-    // ---------- starter-code contract (filled in Phase 6) ----------
 
     void capture(int tag, int val) {
         for (auto& e : queue) {
@@ -81,7 +75,7 @@ public:
    void executeCycle(std::vector<int>& Memory, std::vector<ROBEntry>& ROB) {
     clear_broadcast();
 
-    // ---- 1. ISSUE: find the first not-yet-started entry (strict in-order) ----
+    //  1. START: find the next ready entry and start it 
     for (auto& e : queue) {
         if (e.cycles_remaining >= 0) continue;   // already started, skip
 
@@ -95,12 +89,12 @@ public:
         break;   // only one start per cycle
     }
 
-    // ---- 2. DRAIN: decrement every started entry ----
+    // 2. DRAIN: decrement every started entry ----
     for (auto& e : queue) {
         if (e.cycles_remaining > 0) e.cycles_remaining--;
     }
 
-    // ---- 3. FINISH: front entry, if counter hit 0 ----
+    //  3. FINISH: front entry, if counter hit 0 ----
     if (queue.empty() || queue.front().cycles_remaining != 0) return;
 
     LSQEntry& e = queue.front();

@@ -7,18 +7,12 @@
 
 class ExecutionUnit {
 public:
-    // --- identity & timing ---
+   
     UnitType name;
     int latency = 1;
     int rs_size = 4;
-
-    // --- reservation station ---
     std::vector<RSEntry> rs;
-
-    // --- pipelined in-flight instructions (countdown list, oldest-first) ---
     std::vector<InFlightEntry> in_flight;
-
-    // --- broadcast output (set at end of executeCycle when an instr finishes) ---
     bool has_result = false;
     bool has_exception = false;
     int  bcast_rob_idx = -1;
@@ -38,7 +32,7 @@ public:
         rs.assign(size, RSEntry{});
     }
 
-    // ---------- helpers ----------
+   
     bool rs_full() const {
         for (auto& e : rs) if (!e.busy) return false;
         return true;
@@ -76,10 +70,7 @@ public:
         clear_broadcast();
     }
 
-    // ---------- starter-code contract (to be filled in Phase 6) ----------
-
-    // CDB snoop: when some OTHER unit broadcasts (tag, val), every RS entry
-    // here checks whether it was waiting on `tag` and, if so, fills the value in.
+    
     void capture(int tag, int val) {
         for (auto& e : rs) {
             if (!e.busy) continue;
@@ -88,17 +79,11 @@ public:
         }
     }
 
-    // Advance one cycle inside this execution unit.
-    // Order per spec + Piazza: issue new from RS FIRST (start-of-cycle snapshot),
-    // then drain in_flight, then populate broadcast slot for the finisher.
-    // RS entries are freed at broadcast, not at issue.
+   
     void executeCycle() {
         clear_broadcast();
 
-        // ---- 1. ISSUE: pick oldest-ready RS entry that is not yet issued ----
-        //
-        // "Not yet issued" means there's no in_flight entry referring to its rs_slot.
-        // Only one instruction can be issued per cycle per unit (single-issue).
+       
         int oldest_idx = -1;
         int oldest_pc = INT32_MAX;
         for (int i = 0; i < (int)rs.size(); i++) {
@@ -122,7 +107,6 @@ public:
         }
 
         if (oldest_idx != -1) {
-            // Compute result at issue time (Q3 decision).
             RSEntry& r = rs[oldest_idx];
             InFlightEntry f{};
             f.rs_slot = oldest_idx;
@@ -131,7 +115,6 @@ public:
             f.cycles_remaining = latency;
             f.exception = false;
 
-            // Only ADDER ops for now — Step 5 will extend this.
             switch (r.op) {
                 // ---------- ADDER ops ----------
                 case OpCode::ADD: {
@@ -159,15 +142,12 @@ public:
                     f.result = (r.Vj < r.imm) ? 1 : 0;
                     break;
 
-                // ---------- MULTIPLIER ----------
                 case OpCode::MUL: {
                     int64_t res = (int64_t)r.Vj * (int64_t)r.Vk;
                     if (res > INT32_MAX || res < INT32_MIN) f.exception = true;
                     f.result = (int)res;
                     break;
                 }
-
-                // ---------- DIVIDER ----------
                 case OpCode::DIV: {
                     if (r.Vk == 0) {
                         f.exception = true;
@@ -191,17 +171,12 @@ public:
                     }
                     break;
                 }
-
-                // ---------- LOGIC ----------
                 case OpCode::AND:  f.result = r.Vj & r.Vk;  break;
                 case OpCode::OR:   f.result = r.Vj | r.Vk;  break;
                 case OpCode::XOR:  f.result = r.Vj ^ r.Vk;  break;
                 case OpCode::ANDI: f.result = r.Vj & r.imm; break;
                 case OpCode::ORI:  f.result = r.Vj | r.imm; break;
                 case OpCode::XORI: f.result = r.Vj ^ r.imm; break;
-
-                // ---------- BRANCH ----------
-                // For branches, the "result" field is unused; actual_target and taken are what matter.
                 case OpCode::BEQ: {
                     f.taken = (r.Vj == r.Vk);
                     f.actual_target = f.taken ? (r.instr_pc + r.imm) : (r.instr_pc + 1);
@@ -231,7 +206,7 @@ public:
             in_flight.push_back(f);
         }
         int finisher_idx = -1;
-        // ---- 2. DRAIN: decrement every in_flight entry's counter ----
+       
         for (auto& f : in_flight) {
             f.cycles_remaining--;
             if(f.cycles_remaining <= 0){
@@ -254,7 +229,7 @@ public:
             bcast_mem_addr = f.mem_addr;
             bcast_instr_pc = f.instr_pc;
 
-            // Free the RS entry (broadcast time per Piazza).
+            // Free the RS entry (broadcast time announced on  Piazza).
             if (f.rs_slot >= 0 && f.rs_slot < (int)rs.size()) {
                 rs[f.rs_slot] = RSEntry{};
             }

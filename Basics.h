@@ -32,15 +32,7 @@ struct ProcessorConfig {
     int lsq_rs_size = 32;
 };
 
-// ============================================================
-//  Reorder Buffer entry
-//  Holds everything the Commit stage needs to retire the instr:
-//    - what the instruction is (op, dest_reg)
-//    - the computed value (when execute finishes)
-//    - exception flag (set when execute detects overflow/div0/OOB)
-//    - branch resolution info (for checking prediction at commit)
-//    - memory op info (store addr + value)
-// ============================================================
+
 struct ROBEntry {
     bool busy = false;           // slot is occupied
     bool ready = false;          // execute has finished, value/target known
@@ -61,13 +53,6 @@ struct ROBEntry {
     int store_value = 0;         // for sw only (since dest_reg is -1)
 };
 
-// ============================================================
-//  Reservation Station entry
-//  Holds an instruction waiting to execute. Operands are either
-//  ready values (Vj/Vk) or pending on a ROB tag (Qj/Qk).
-//    Qj == -1  means  Vj is the actual value
-//    Qj >= 0   means  waiting for ROB entry Qj to broadcast
-// ============================================================
 struct RSEntry {
     bool busy = false;
     OpCode op;
@@ -79,11 +64,7 @@ struct RSEntry {
     int instr_pc = -1;           // original program-order PC (for age-based RS scheduling)
 };
 
-// ============================================================
-//  In-flight entry inside a pipelined execution unit
-//  Instruction has left its RS and is flowing through the unit's
-//  internal pipeline with `cycles_remaining` cycles until broadcast.
-// ============================================================
+
 struct InFlightEntry {
     int rob_idx = -1;
     int cycles_remaining = 0;
